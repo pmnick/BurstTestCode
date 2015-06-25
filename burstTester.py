@@ -13,19 +13,16 @@ import sys, os
 #To Do
 ## Check math on flow and pressure sensor (callibrate the pressure sensor
 ## beware of faulty wires... causes extreme noise
-## heat shrink mounts
-## cut slots for plugs
-## glue plugs in place
-## fix power cord for more permanent solution
 ## fingernail polish pressure sensor so it doesn't get plugged in backwards
 ## order backup RPis
 ## order backup Differential op amps and ADCs
 #______________________________________________________________________________________________________________________
 #----------------------------------------------------------------------------------------------------------------------
-
-#this is a test for mark                                                                                                                                                                                                                         
+                                                                                                                                                                                                                      
 
 print("start")
+
+#-------------------------------- Initializations --------------------------------------
 #Setting up Spi to read ADC
 spi_0 = spidev.SpiDev()
 spi_0.open(0, 0)  #the second number indicates which SPI pin CE0 or CE1
@@ -43,7 +40,7 @@ destination = "/home/pi/Desktop/Data/"
 tempFileName = "AutosavedData.txt"
 a=open(destination + tempFileName,'w') #a means append to existing file, w means overwrite old data
 a.write("\n\n"+ str(datetime.now()))
-Average = 3 # taking 15 samples per second average of 15 will average over one second
+Average = 3 #number of samples over which the "show" variables will be averaged
 flowshow = 0.0
 Diffshow= 0.0
 maxPressure = 1.0
@@ -51,6 +48,7 @@ popupDesc = "Enter Sample Name (ie 31-A)"
 
 #Setting up GUI
 
+#popup window for entering sample name
 class popupWindow(object):
     def __init__(self,master):
         global popupDesc
@@ -58,6 +56,7 @@ class popupWindow(object):
         self.l=Label(top,text = popupDesc)
         self.l.pack()
         self.e=Entry(top)
+        self.e.focus()
         self.e.pack()
         self.b=Button(top,text='OK',command=self.cleanup)
         self.b.pack()
@@ -86,6 +85,10 @@ root.title("Burst Tester")
 ##h=background_image.height() 
 C = Canvas(root, bg='#333',height=400,width=1200) #<------- i changed heigt and width... need updating
 C.focus_set() # Sets the keyboard focus to the canvas
+#frame=Frame(root)
+#frame= LabelFrame(root, text="Readouts",height=400,width=screenWidth)
+#frame.pack(side="bottom")
+#Readouts=Canvas(frame, bg= "gray", height = 399, width = screenWidth-1)
 DL= StringVar()
 DL.set('0')
 differential_label = Label(C, textvariable=DL, padx=5,font=("Helvetica",16))
@@ -102,8 +105,6 @@ MP = StringVar()
 MP.set('0')
 MaxP_label = Label(C, textvariable= MP, padx=5, font=("Helvetica",16))
 MaxP_label.place(x=50, y=100)
-frame=Frame(root)
-frame.pack(anchor=NW)
 
 
 #--- Graph settings
@@ -143,15 +144,14 @@ def coordinate():
 #---End initiation of lists
 
 Graph= LabelFrame(root, text="Pressure Graph",height=250,width=screenWidth)
-Graph.pack()
+Graph.pack(side="left")
 GraphC=Canvas(Graph, bg = "gray", height = 249, width = screenWidth-1)
 Graph2= LabelFrame(root, text = "Flow vs. Pressure", height = 250, width=screenWidth)
-Graph2.pack()
+Graph2.pack(side="right")
 Graph2C=Canvas(Graph2, bg= "gray", height = 249, width = screenWidth-1)
 maxP = GraphC.create_rectangle(0,0,20,50)
 cl0 = GraphC.create_line(xy0Coords,smooth=True)
 c11 = Graph2C.create_oval(Diffshow*screenWidth/100-2,250-flowshow*250/20-2,Diffshow*screenWidth/100+2,250-flowshow*250/20+2)
-##ctar = GraphC.create_line(0,(249-FlowTarget*20),450,(249-FlowTarget*20), fill='red')
 scale5 = Label(GraphC, text=' 100-', bg = "gray")
 scale5.place(x=0,y=(240-20*12))
 scale7 = Label(GraphC, text=' 90-', bg = "gray")
@@ -190,8 +190,12 @@ GPIO.setwarnings(False)
 GPIO.setup(ForwardFlow, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)#Generally reads LOW
 
 
-#----------------------Function Definitons--------------------------------
+#---------------------------------------------------------------------------------------
+#                                 Definitions
+#---------------------------------------------------------------------------------------
 
+
+#-------------------------------- Read ADC --------------------------------------
 def readadc_0(adcnum_0): #this fucntion can be used to find out the ADC value on ADC 0
     if adcnum_0 > 7 or adcnum_0 < 0:
         return -1
@@ -200,17 +204,12 @@ def readadc_0(adcnum_0): #this fucntion can be used to find out the ADC value on
     adcout_0 = ((r_0[1] & 3) << 8) + r_0[2]
     return adcout_0
 
-##def readadc_0diff(adcnum_0): #this fucntion can be used to find out the differential ADC value between two chanels on ADC 0
-##    if adcnum_0 > 7 or adcnum_0 < 0:
-##        return -1
-##    r_0 = spi_0.xfer2([1, adcnum_0 << 4, 0]) #start bit, Single/Differential mode, Don't care bit OR
-##    adcout_0 = ((r_0[1] & 3) << 8) + r_0[2]
-##    return adcout_0
-
+#-------------------------------- Increment Flow Count --------------------------
 def callback_fflow(ForwardFlow):
     global ForwardFlowCount
     ForwardFlowCount+=1
 
+#-------------------------------- update line graph -----------------------------
 #shifts y values down in index in array to represent time moved forward
 def shiftCoords(nextValue):
 
@@ -219,6 +218,7 @@ def shiftCoords(nextValue):
     y0Coords.append(int(nextValue))
     coordinate()
 
+#-------------------------------- Update Graph --------------------------------------
 #updates the GUI based on the new time
 def move_time():
     global maxP,MP,cl0,xy0Coords,resolution,baseTime,forwardflow,Diffshow,maxPressure,flowshow,screenWidth, c11
@@ -236,14 +236,14 @@ def move_time():
     #root.title(title)
     root.after(baseTime*resolution,move_time)
 
-       
+#-------------------------------- Write Data --------------------------------------
 def writeData(): 
     global destination,Diffshow,samplePeriod,ForwardFlowCount,oldForwardFlowCount,forwardflow,FlowrateAvg,flowshow
 
     ##Calibration of sensor: Real Pressure = reading-(-1.06+.1007xreading)
 
-    Reading = (3.3*float(readadc_0(1)-readadc_0(0))/1023)*100
-    DifferentialPressure=round(Reading-(-1.06+.1007*Reading),1) #Need to update this calibration
+    Reading = (3.3*float(readadc_0(1)-readadc_0(2))/1023)*100 #conduct calibration here
+    DifferentialPressure=round(Reading,1)
     DiffAvg.pop(0)
     DiffAvg.append(DifferentialPressure)
     Diffshow=np.mean(DiffAvg)
@@ -255,18 +255,17 @@ def writeData():
     FlowrateAvg.append(forwardflow)
     flowshow = np.mean(FlowrateAvg)
     FRL.set("Flow rate: "+str(round(flowshow,1)) + " LPM")
-    FL.set("Volume filtered: "+str(round(ForwardFlowCount/1000,1)) + " liters")
-    data = str(round(Diffshow,1)) + "\t" + str(round(flowshow,1))
-    a.write("\n"+ str(datetime.now()) + ", " + str(data))
+    FL.set("Volume filtered: "+str(round(ForwardFlowCount/4600,4)) + " liters")
+    data = str(round(DifferentialPressure,1)) + "\t" + str(round(forwardflow,1)) + "\t" + str(round(ForwardFlowCount/4600,4))
+    a.write("\n"+ str(datetime.now()) + "\t" + str(data))
     oldForwardFlowCount=ForwardFlowCount
-##    oldBackwashFlowCount=BackwashFlowCount
     root.after(samplePeriod,writeData)
 
+#-------------------------------- End Sequence --------------------------------------
 def callback_end(event):
     global FlowCount, StartTime, popupDesc
     # GPIO.cleanup()#i think this would get get rid of the draining process
     print("max pressure was: " + str(maxPressure))
-    a.write("\n" + str("Max Pressure was: ") + str(maxPressure))
     m.popup()
     while m.entryValue() == "": #prevents entry of "" as file name.
         m.popup()
@@ -275,6 +274,7 @@ def callback_end(event):
         m.popup()
     #print (m.entryValue())
     spi_0.close()
+    a.write("\n" + str("Max Pressure was: ") + str(maxPressure))
     a.close()
     os.rename(destination + tempFileName, destination + m.entryValue() + ".txt")
     quit()
@@ -282,13 +282,14 @@ def callback_end(event):
 #Setting up event detection
 GPIO.add_event_detect(ForwardFlow, GPIO.RISING, callback=callback_fflow)
 
+
+
 #----------------------------------Main loop----------------------------------------
-
-
 C.bind("e",callback_end)
 C.pack()
-GraphC.pack(anchor=CENTER)
-Graph2C.pack(anchor=CENTER)
+GraphC.pack(anchor=W)
+Graph2C.pack(anchor=E)
+#Readouts.pack(anchor=S)
 root.after(baseTime,move_time)
 root.after(samplePeriod,writeData)
 m=mainWindow(root)
