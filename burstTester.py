@@ -6,20 +6,20 @@ import time
 import numpy as np
 import spidev
 from datetime import datetime, timedelta
-import sys
+import sys, os
 
 #this is a test web edit
 
 #To Do
-## Add diagram with labels (insert image and overlay like Mark did)
-## Add label for maxPressure
-## Ask for sample name at end and append to file name so data doesn't get overwritten
-##      Look at how Mark already implemented this and pull that in
 ## Check math on flow and pressure sensor (callibrate the pressure sensor
-## maybe produce a real time plot of flow vs. pressure (every 1 second take a snapshot of
-##      flow and pressure and plot it.  After enough data, we could bake in an expected curve
-##      and it would show a quick comparison of actual vs. expected. This could help us see
-##      deviations very quickly.
+## beware of faulty wires... causes extreme noise
+## heat shrink mounts
+## cut slots for plugs
+## glue plugs in place
+## fix power cord for more permanent solution
+## fingernail polish pressure sensor so it doesn't get plugged in backwards
+## order backup RPis
+## order backup Differential op amps and ADCs
 #______________________________________________________________________________________________________________________
 #----------------------------------------------------------------------------------------------------------------------
 
@@ -39,35 +39,46 @@ forwardflow = 0.0
 StartTime = datetime.now()
 samplePeriod = 100  #milliseconds, time between data points written to txt file
 minimumtime = 1000
-destination = "/home/pi/Desktop/Data/AutosavedData.txt"
-a=open(destination,'w') #a means append to existing file, w means overwrite old data
+destination = "/home/pi/Desktop/Data/"
+tempFileName = "AutosavedData.txt"
+a=open(destination + tempFileName,'w') #a means append to existing file, w means overwrite old data
 a.write("\n\n"+ str(datetime.now()))
 Average = 3 # taking 15 samples per second average of 15 will average over one second
 flowshow = 0.0
 Diffshow= 0.0
 maxPressure = 1.0
-
+popupDesc = "Enter Sample Name (ie 31-A)"
 
 #Setting up GUI
+
 class popupWindow(object):
     def __init__(self,master):
+        global popupDesc
         top=self.top=Toplevel(master)
-        self.l=Label(top,text="Set Value")
+        self.l=Label(top,text = popupDesc)
         self.l.pack()
         self.e=Entry(top)
         self.e.pack()
-        self.b=Button(top,text='Done',command=self.cleanup)
+        self.b=Button(top,text='OK',command=self.cleanup)
         self.b.pack()
+        
     def cleanup(self):
         self.value=self.e.get()
         self.top.destroy()
-
+    
 class mainWindow(object):
     def __init__(self,master):
         self.master=master
 
+    def popup(self):
+        self.w=popupWindow(self.master)
+        self.master.wait_window(self.w.top)
+
+    def entryValue(self):
+        return self.w.value
+
 root = Tk()
-root.title("Backwash Control")
+root.title("Burst Tester")
 
 #----initializing GUI------------------
 ##background_image = PhotoImage(file='/home/pi/Desktop/Code/background.gif')
@@ -77,22 +88,20 @@ C = Canvas(root, bg='#333',height=400,width=1200) #<------- i changed heigt and 
 C.focus_set() # Sets the keyboard focus to the canvas
 DL= StringVar()
 DL.set('0')
-differential_label = Label(C, textvariable=DL, padx=5)
-differential_label.place(x=400,y=200)
-Flowrate_text = Label(C, text='Flow Rate:', padx=5,pady=3)
-Flowrate_text.place(x=418,y=89)
-##Flowrate_text2 = Label(C, text='Flow Rate:', padx=5,pady=3)
-##Flowrate_text2.place(x=418,y=274)
+differential_label = Label(C, textvariable=DL, padx=5,font=("Helvetica",16))
+differential_label.place(x=50,y=150)
 FRL= StringVar()
 FRL.set('0')
-Flowrate_label = Label(C, textvariable=FRL,pady=3)
-Flowrate_label.place(x=489,y=89)
-Filtrate_text = Label(C,text='Liters:', padx=5)
-Filtrate_text.place(x=760,y=320)
+Flowrate_label = Label(C, textvariable=FRL,pady=3,font=("Helvetica",16))
+Flowrate_label.place(x=50,y=200)
 FL= StringVar()
 FL.set('0')
-Filtrate_label = Label(C, textvariable=FL, padx=5)
-Filtrate_label.place(x=805,y=320)
+Filtrate_label = Label(C, textvariable=FL, padx=5,font=("Helvetica",16))
+Filtrate_label.place(x=50,y=250)
+MP = StringVar()
+MP.set('0')
+MaxP_label = Label(C, textvariable= MP, padx=5, font=("Helvetica",16))
+MaxP_label.place(x=50, y=100)
 frame=Frame(root)
 frame.pack(anchor=NW)
 
@@ -133,11 +142,15 @@ def coordinate():
         xy0Coords[i+1] = y0Coords[i/2]
 #---End initiation of lists
 
-Graph= LabelFrame(root, text="Flow Graph",height=250,width=screenWidth)
+Graph= LabelFrame(root, text="Pressure Graph",height=250,width=screenWidth)
 Graph.pack()
 GraphC=Canvas(Graph, bg = "gray", height = 249, width = screenWidth-1)
+Graph2= LabelFrame(root, text = "Flow vs. Pressure", height = 250, width=screenWidth)
+Graph2.pack()
+Graph2C=Canvas(Graph2, bg= "gray", height = 249, width = screenWidth-1)
 maxP = GraphC.create_rectangle(0,0,20,50)
 cl0 = GraphC.create_line(xy0Coords,smooth=True)
+c11 = Graph2C.create_oval(Diffshow*screenWidth/100-2,250-flowshow*250/20-2,Diffshow*screenWidth/100+2,250-flowshow*250/20+2)
 ##ctar = GraphC.create_line(0,(249-FlowTarget*20),450,(249-FlowTarget*20), fill='red')
 scale5 = Label(GraphC, text=' 100-', bg = "gray")
 scale5.place(x=0,y=(240-20*12))
@@ -161,6 +174,12 @@ scale2 = Label(GraphC, text=' 10-', bg = "gray")
 scale2.place(x=0,y=(240-2*12))
 scale0 = Label(GraphC, text=' 0-', bg = "gray")
 scale0.place(x=0,y=(240-0*20))
+
+x2Axis = Label(Graph2C, text="Pressure (psi)")
+x2Axis.place(x=screenWidth/2-10,y=230)
+
+y2Axis = Label(Graph2C, text="Flowrate", wraplength=1)
+y2Axis.place(x= 0,y=250/2-50)
 
 #setting up GPIO pins                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
 ForwardFlow = 21
@@ -202,14 +221,16 @@ def shiftCoords(nextValue):
 
 #updates the GUI based on the new time
 def move_time():
-    global maxP,cl0,xy0Coords,resolution,baseTime,forwardflow,Diffshow,maxPressure
+    global maxP,MP,cl0,xy0Coords,resolution,baseTime,forwardflow,Diffshow,maxPressure,flowshow,screenWidth, c11
     GraphC.delete(maxP)
     GraphC.delete(cl0)
     if maxPressure < Diffshow:
         maxPressure = Diffshow
     maxP = GraphC.create_rectangle(0,250,480,249-int(maxPressure*250/100), outline="red") #why dividing backwashflow?? <--------------------------
+    MP.set("Max Pressure: " + str(maxPressure) + " psi")
     shiftCoords(249-(Diffshow*250/100))
     cl0 = GraphC.create_line(xy0Coords)
+    c11 = Graph2C.create_oval(Diffshow*screenWidth/100-2,250-flowshow*250/20-2,Diffshow*screenWidth/100+2,250-flowshow*250/20+2)
     #print(float(readadc_0(0))/1023*250)
     #title="V= " , str(round(3.3*float(readadc_0(2)-readadc_0(0))/1023,2)) , str(round(3.3*float(readadc_0(2))/1023,2)), str(round(3.3*float(readadc_0(0))/1023,2))
     #root.title(title)
@@ -222,19 +243,19 @@ def writeData():
     ##Calibration of sensor: Real Pressure = reading-(-1.06+.1007xreading)
 
     Reading = (3.3*float(readadc_0(1)-readadc_0(0))/1023)*100
-    DifferentialPressure=round(Reading-(-1.06+.1007*Reading),1)
+    DifferentialPressure=round(Reading-(-1.06+.1007*Reading),1) #Need to update this calibration
     DiffAvg.pop(0)
     DiffAvg.append(DifferentialPressure)
     Diffshow=np.mean(DiffAvg)
-    DL.set(str(round(Diffshow,1)))
+    DL.set("Diff Pressure: "+str(round(Diffshow,1)) + " psi")
     
      
-    forwardflow=((ForwardFlowCount-oldForwardFlowCount)/samplePeriod)*60 #60 is a conversion factor to convert the flowrate from pulses per 100miliseconds to liters per minute
+    forwardflow=((ForwardFlowCount-oldForwardFlowCount)/samplePeriod)*13.0435 #13.0435 = 1000/4600*60 #FTB2003 gets 4600 pulses per liter
     FlowrateAvg.pop(0)
     FlowrateAvg.append(forwardflow)
     flowshow = np.mean(FlowrateAvg)
-    FRL.set(str(round(flowshow,1)))
-    FL.set(str(round(ForwardFlowCount/1000,1)))
+    FRL.set("Flow rate: "+str(round(flowshow,1)) + " LPM")
+    FL.set("Volume filtered: "+str(round(ForwardFlowCount/1000,1)) + " liters")
     data = str(round(Diffshow,1)) + "\t" + str(round(flowshow,1))
     a.write("\n"+ str(datetime.now()) + ", " + str(data))
     oldForwardFlowCount=ForwardFlowCount
@@ -242,12 +263,20 @@ def writeData():
     root.after(samplePeriod,writeData)
 
 def callback_end(event):
-    global FlowCount, StartTime
+    global FlowCount, StartTime, popupDesc
     # GPIO.cleanup()#i think this would get get rid of the draining process
     print("max pressure was: " + str(maxPressure))
     a.write("\n" + str("Max Pressure was: ") + str(maxPressure))
+    m.popup()
+    while m.entryValue() == "": #prevents entry of "" as file name.
+        m.popup()
+    while os.path.isfile(destination + m.entryValue()+".txt"):
+        popupDesc = "A file already exists for that sample. Please enter a different sample name: "
+        m.popup()
+    #print (m.entryValue())
     spi_0.close()
     a.close()
+    os.rename(destination + tempFileName, destination + m.entryValue() + ".txt")
     quit()
 
 #Setting up event detection
@@ -256,9 +285,10 @@ GPIO.add_event_detect(ForwardFlow, GPIO.RISING, callback=callback_fflow)
 #----------------------------------Main loop----------------------------------------
 
 
-C.bind("<End>",callback_end)
+C.bind("e",callback_end)
 C.pack()
 GraphC.pack(anchor=CENTER)
+Graph2C.pack(anchor=CENTER)
 root.after(baseTime,move_time)
 root.after(samplePeriod,writeData)
 m=mainWindow(root)
